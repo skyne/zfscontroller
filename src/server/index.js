@@ -3,7 +3,7 @@ const express = require('express');
 // call express
 const app = express(); // define our app using express
 const bodyParser = require('body-parser');
-const os = require('os');
+var busboy = require('connect-busboy');
 
 const zfsClient = require('./utils/zfsClient');
 
@@ -15,6 +15,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 const port = process.env.PORT || 8050; // set our port
 
 app.use(express.static('dist'));
+app.use(busboy());
 app.get('/', (req, res) => {
   console.log('sending index.html');
   res.sendFile('/dist/index.html');
@@ -29,25 +30,45 @@ router.use((req, res, next) => {
   console.log('App is running');
   next(); // make sure we go to the next routes and don't stop here
 });
-// test http methods
-// ----------------------------------------------------
-router.route('/test')
-  .get((req, res) => {
-    res.json({ username: os.userInfo().username });
-  })
-  .post(bodyParser.json(), (req, res) => {
-    res.json(req.body);
-  })
-  .put(bodyParser.json(), (req, res) => {
-    res.json(req.body);
-  })
-  .delete(bodyParser.json(), (req, res) => {
-    res.json(req.body);
-  });
 
 router.get('/list-snapshots', async (req, res) => {
   const result = await zfsClient.listSnapshots();
   res.json(result);
+});
+
+router.post('/restore-snapshot', async (req, res) => {
+  const result = await zfsClient.restoreSnapshot(req.body.name);
+  res.json(result);
+});
+
+router.post('/create-snapshot', async (req, res) => {
+  const result = await zfsClient.createSnapshot(req.body.dataset, req.body.name);
+  res.json(result);
+});
+
+router.post('/remove-snapshot', async (req, res) => {
+  const result = await zfsClient.removeSnapshot(req.body.name);
+  res.json(result);
+});
+
+router.post('/download-snapshot', async (req, res) => {
+  const result = await zfsClient.getStream(req.body.name, req.body.reference);
+  result.pipe(res);
+});
+
+router.post('/upload-snapshot', async (req, res) => {
+
+  console.log(req);
+  req.busboy.on('file', function (fieldname, file, filename) {
+    console.log("Uploading: " + filename);
+
+    zfsClient.getStream(filename, file).then((recieveStream) => {
+      recieveStream.on('close', function () {
+        console.log("Upload Finished of " + filename);
+        res({});           //where to go next
+      });
+    })
+  });
 });
 
 // REGISTER OUR ROUTES -------------------------------

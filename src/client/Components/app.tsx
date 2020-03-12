@@ -3,110 +3,184 @@ import '../Less/app.less';
 import * as ProfilePicture from '../Assets/profile.png';
 
 interface AppStates {
-  username?: string;
-  textOfPostTest: string,
-  textForPost: string,
-  textOfPutTest: string,
-  textForPut:string,
-  textOfDeleteTest: string,
-  textForDelete: string,
+  snapshots?: any[];
+  newSnapshotName: string
+  selectedFile: File;
 }
 export default class App extends React.Component<{}, AppStates> {
-  state: AppStates = { 
-    username: null,
-    textOfPostTest: '',
-    textForPost: null,
-    textOfPutTest: '',
-    textForPut:null,
-    textOfDeleteTest: '',
-    textForDelete: null,
-   };
+  constructor(props) {
+    super(props);
 
-  getUser = () => {
-    fetch('/api/test')
-      .then(res => res.json())
-      .then(res => this.setState({ username : res.username }));
+    this.handleChange = this.handleChange.bind(this);
   }
 
+  state: AppStates = {
+    snapshots: null,
+    newSnapshotName: null,
+    selectedFile: null
+  };
 
-  sendUserInfo = () => {
-    let text = this.state.textOfPostTest;
+  componentWillMount = () => {
+    console.log('willmount');
+    this.getSnapshots();
+  }
 
-    text.trim() && 
-    fetch('/api/test',{
+  getSnapshots = () => {
+    fetch('/api/list-snapshots')
+      .then(res => res.json())
+      .then(res => this.setState({ snapshots: res }));
+  }
+
+  restoreSnapshot = (name) => {
+    fetch('/api/restore-snapshot', {
       method: 'POST',
       headers: {
-            'Content-Type': 'application/json',
-            //'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
-        },
-      body: JSON.stringify({text})})
-    .then(res=> res.json()).then(res => this.setState({textForPost: res.text}));
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ name })
+    })
+      .then(res => res.json()).then(res => alert(res)).then(() => this.getSnapshots());
   }
 
-  changeUserInfo = () => {
-    this.state.textOfPutTest.trim() &&
-     fetch('/api/test',{
-      method: 'PUT',
-      headers:{
+  removeSnapshot = (name) => {
+    fetch('/api/remove-snapshot', {
+      method: 'POST',
+      headers: {
         'Content-Type': 'application/json',
-         'Accept': 'application/json',
+        'Accept': 'application/json',
       },
-      body: JSON.stringify({text: this.state.textOfPutTest})
-    }).then(res=>res.json()).then(res => this.setState({textForPut: res.text}));
+      body: JSON.stringify({ name })
+    })
+      .then(res => res.json()).then(() => this.getSnapshots());
   }
 
-  deleteUserInfo = () => {
-    this.state.textOfDeleteTest.trim() &&
-    fetch('/api/test',{
-      method: 'DELETE',
-      headers:{
+  createSnapshot(dataset, name) {
+    fetch('/api/create-snapshot', {
+      method: 'POST',
+      headers: {
         'Content-Type': 'application/json',
-         'Accept': 'application/json',
+        'Accept': 'application/json',
       },
-      body: JSON.stringify({text: this.state.textOfDeleteTest})
-    }).then(res=>res.json()).then(res => this.setState({textForDelete: res.text}));
+      body: JSON.stringify({ dataset, name })
+    })
+      .then(res => res.json()).then(() => this.getSnapshots());
+  }
+
+  linkRef: any = React.createRef();
+  downloadSnapshot(name, reference) {
+    fetch('/api/download-snapshot', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ name, reference })
+    }).then(res => {
+      return res.blob();
+    }).then(blob => {
+      const href = window.URL.createObjectURL(blob);
+      const a = this.linkRef.current;
+      a.download = `snapshot_${name}`;
+      a.href = href;
+      a.click();
+      a.href = '';
+    }).catch(err => console.error(err));
+  }
+
+  uploadSnapshot(data) {
+    for (var key of data.entries()) {
+      console.log(key[0] + ', ' + key[1]);
+    }
+    fetch('/api/upload-snapshot', {
+      method: 'POST',
+      body: data
+    }).then(() => this.getSnapshots());
+  }
+
+  generateRows(snapshots) {
+    const rows = [];
+    for (let i = 0; i < snapshots.length; i++) {
+      const snapshot = snapshots[i];
+      rows.push(<tr>
+        {
+          Object.values(snapshot).map((value) => <td>{value}</td>)
+        }
+        <td><button onClick={() => this.removeSnapshot(snapshot['name'])}>Delete</button></td>
+        {i === snapshots.length - 1 ?
+          <td><button onClick={() => this.restoreSnapshot(snapshot['name'])}>Restore</button></td>
+          :
+          <td></td>
+        }
+        <td><a ref={this.linkRef} /><button onClick={() => this.downloadSnapshot(snapshot['name'], snapshots[i - 1] ? snapshots[i - 1]['name'] : undefined)}>Download</button></td>
+      </tr>);
+    }
+
+    return rows;
+  }
+
+  handleChange({ target }) {
+    this.setState({
+      newSnapshotName: target.value
+    });
+  }
+
+  onChangeHandler = event => {
+    console.log(event.target.files);
+    this.setState({
+      selectedFile: event.target.files[0],
+      //loaded: 0,
+    })
+  }
+
+  onClickHandler = () => {
+    const data = new FormData()
+    data.append('file', this.state.selectedFile);
+    for (var key of (data as any).entries()) {
+      console.log(key[0] + ', ' + key[1]);
+    }
+    this.uploadSnapshot(data);
   }
 
   render() {
-    const { username, textForPost, textForPut, textForDelete } = this.state;
-    const inputText = "Input text...";
+    const { snapshots, newSnapshotName } = this.state;
     return (
       <div>
         <div>
-        <div>
-        <div>
-        <button onClick={this.getUser}>{"Test Get"}</button>
+          {snapshots != null ?
+
+            <>
+              <span>List of ZFS snapshots</span>
+              <table>
+                <tr>
+                  {Object.keys(snapshots[0]).map((o) =>
+                    <th>{o}</th>
+                  )}
+                  <th>Delete</th>
+                  <th>Restore</th>
+                  <th>Download</th>
+                </tr>
+                {
+                  this.generateRows(snapshots)
+                }
+              </table>
+            </>
+            :
+            null
+          }
         </div>
-        <label>{"Test for Get: "}</label>
-        <h2>{!!username && `Hello ${username}!`}</h2>
-        </div>
-        <div>
-          <input onChange={e => this.setState({ textOfPostTest: e.target.value })} placeholder={inputText}/>
-          <button onClick={this.sendUserInfo}>{"Test Post"}</button>
-          </div>
-          <div>
-          <label>{"Test for Post: "}</label>
-          <h3>{textForPost}</h3>
-          </div>
-          <div>
-            <input onChange={e => this.setState({textOfPutTest: e.target.value})} placeholder={inputText}/>
-            <button onClick={this.changeUserInfo} >{"Test Put"}</button>
-          </div>
-          <div>
-            <label>{"Put text test: "}</label>
-            <h3>{textForPut}</h3>
-          </div>
-          <div>
-            <input onChange={e => this.setState({textOfDeleteTest: e.target.value})} placeholder={inputText}/>
-            <button onClick={this.deleteUserInfo} >{"Test Delete"}</button>
-          </div>
-          <div>
-            <label>{"Delete text test: "}</label>
-            <h3>{textForDelete}</h3>
-          </div>
-        </div>
-      </div>
+        <input
+          type="text"
+          name="payloadBox"
+          placeholder="Enter snapshot name here..."
+          value={newSnapshotName}
+          onChange={this.handleChange}
+        />
+
+        <button value="Send" onClick={() => this.createSnapshot('mysql-data-pool', newSnapshotName)}>Create snapshot</button>
+        <input type="file" name="file" onChange={this.onChangeHandler} />
+        <button type="button" onClick={this.onClickHandler}>Upload</button>
+      </div >
     );
   }
 }
