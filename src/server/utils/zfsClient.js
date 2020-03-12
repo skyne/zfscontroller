@@ -17,11 +17,15 @@ module.exports.listSnapshots = async () => {
 }
 
 async function shutdownServices() {
+    console.log('Stopping services');
     await exec('service mysql stop && service redis-server stop');
+    console.log('Stopping services DONE');
 };
 
 async function startServices() {
+    console.log('Starting services');
     await exec('service mysql start && service redis-server start');
+    console.log('Starting services DONE');
 };
 
 async function restoreZFSSnapshot(name) {
@@ -82,17 +86,30 @@ module.exports.getStream = async (name, reference) => {
     });
 }
 
-module.exports.recieveStream = async (name, stream) => {
+const receiveZFSSnapshot = async (name, stream) => {
     return new Promise((resolve, reject) => {
-        zfs.receive({ snapshot: name }, (err, data) => {
+        zfs.receive({
+            dataset: name.replace('snapshot_', '').replace('.txt', ''),
+            force: true
+        }, (err, data) => {
             if (err) {
                 reject(err);
                 return;
             };
+            stream.on('error', function (error) { console.log('stream', error) });
+            data.on('error', function (error) { console.log('data', error) });
 
-            resolve(data);
             stream.pipe(data);
 
+            data.on('close', () => {
+                resolve();
+            });
         });
     });
+}
+
+module.exports.recieveStream = async (name, stream) => {
+    await shutdownServices();
+    await receiveZFSSnapshot(name, stream);
+    await startServices();
 }
