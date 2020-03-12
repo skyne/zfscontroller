@@ -15,7 +15,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 const port = process.env.PORT || 8050; // set our port
 
 app.use(express.static('dist'));
-app.use(busboy());
+app.use(busboy({ immediate: true }));
 app.get('/', (req, res) => {
   console.log('sending index.html');
   res.sendFile('/dist/index.html');
@@ -58,15 +58,11 @@ router.post('/download-snapshot', async (req, res) => {
 
 router.post('/upload-snapshot', async (req, res) => {
 
-  console.log(req);
   req.busboy.on('file', function (fieldname, file, filename) {
     console.log("Uploading: " + filename);
 
-    zfsClient.getStream(filename, file).then((recieveStream) => {
-      recieveStream.on('close', function () {
-        console.log("Upload Finished of " + filename);
-        res({});           //where to go next
-      });
+    zfsClient.recieveStream(filename, file).then(() => {
+      res.json({});
     })
   });
 });
